@@ -10,26 +10,26 @@
 
 #include <Servo.h>
 
+// calls the function fn and runs the error loop if an error is detected
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
 
-void error_loop(){
-  while(1){
-    delay(100);
-  }
-}
-
 /***********************/
-/*        Servo        */
+/*     Device Pins     */
 /***********************/
 
-//Define the motor ESC pins
 #define THRUSTER_LEFT_FRONT  18
 #define THRUSTER_LEFT_TOP  19
 #define THRUSTER_LEFT_BACK  20
 #define THRUSTER_RIGHT_FRONT  21
 #define THRUSTER_RIGHT_TOP  22
 #define THRUSTER_RIGHT_BACK  23
+
+#define ERROR_LED_PIN 13
+
+/***********************/
+/*     MSG Decode      */
+/***********************/
 
 #define THRUSTER_DATA_BIT_SIZE 5
 
@@ -48,11 +48,19 @@ void error_loop(){
 #define TRB_MASK 0x1f << TRB_SHIFT_VAL
 
 #define ISOLATE_BITS(data, thruster) (data&thruster##_MASK) >> thruster##_SHIFT_VAL
-#define CONVERT_MICROS(bit_val) 1100 + bit_val*25
+#define CONVERT_MICROSECONDS(bit_val) 1100 + bit_val*25
 
-//Define some ESC PWM calibration constants
+/***********************/
+/*    Calib Consts     */
+/***********************/
+
 #define PWM_STOP        91
 #define PWM_STATIC_MOVE 50
+
+/***********************/
+/*   Servo Objects     */
+/***********************/
+
 Servo TLF; //Thruster on left angled at front
 Servo TLT; //Thruster on left pointing upwards
 Servo TLB; //Thruster on left angled at back
@@ -77,7 +85,7 @@ bool e_stop_triggered = false;
 /*         ROS         */
 /***********************/
 rcl_subscription_t subscriber;
-rcl_publisher_t publisher;
+rcl_publisher_t debug_publisher;
 std_msgs__msg__UInt32 msg;
 std_msgs__msg__UInt32 out_msg;
 rclc_executor_t executor;
@@ -86,6 +94,7 @@ rcl_allocator_t allocator;
 rcl_node_t node;
 rcl_timer_t timer;
 
+// Structure to store thruster PWM data
 struct thruster_data {
   uint32_t tlf;
   uint32_t tlt;
@@ -94,9 +103,18 @@ struct thruster_data {
   uint32_t trt;
   uint32_t trb;
 };
-
 struct thruster_data *pwm_data;
 
+/* 
+ * Decodes from message bitwise representation to a pulse length in 
+ * microseconds for each thruster.
+ *
+ * Data is packed within the 32 bit integers in groups of 5 bits (i.e. TLF 
+ * data occupies bits 0-4, TLT data occupies bits 5-9, etc.). 
+ *
+ * The corrects bits are isolated for each thurster with a bit mask and bit 
+ * shift, and then mapped linearly to the range 1100-1900 microseconds.
+ */
 void decode_thruster_data(uint32_t msg_data) {
   uint32_t tlf_bits = ISOLATE_BITS(msg_data, TLF);
   uint32_t tlt_bits = ISOLATE_BITS(msg_data, TLT);
@@ -105,23 +123,26 @@ void decode_thruster_data(uint32_t msg_data) {
   uint32_t trt_bits = ISOLATE_BITS(msg_data, TRT);
   uint32_t trb_bits = ISOLATE_BITS(msg_data, TRB);
 
-//  pwm_data->tlf = tlf_bits;
-//  pwm_data->tlt = tlt_bits;
-//  pwm_data->tlb = tlb_bits;
-//  pwm_data->trf = trf_bits;
-//  pwm_data->trt = trt_bits;
-//  pwm_data->trb = trb_bits;
+  pwm_data->tlf = CONVERT_MICROSECONDS(tlf_bits);
+  pwm_data->tlt = CONVERT_MICROSECONDS(tlt_bits);
+  pwm_data->tlb = CONVERT_MICROSECONDS(tlb_bits);
+  pwm_data->trf = CONVERT_MICROSECONDS(trf_bits);
+  pwm_data->trt = CONVERT_MICROSECONDS(trt_bits);
+  pwm_data->trb = CONVERT_MICROSECONDS(trb_bits);
+}
 
-  pwm_data->tlf = CONVERT_MICROS(tlf_bits);
-  pwm_data->tlt = CONVERT_MICROS(tlt_bits);
-  pwm_data->tlb = CONVERT_MICROS(tlb_bits);
-  pwm_data->trf = CONVERT_MICROS(trf_bits);
-  pwm_data->trt = CONVERT_MICROS(trt_bits);
-  pwm_data->trb = CONVERT_MICROS(trb_bits);
+/*
+ * Flash LED on board in case of error
+ */
+void error_loop(){
+  while(1){
+    digitalWrite(ERROR_LED_PIN, !digitalRead(ERROR_LED_PIN));
+    delay(100);
+  }
 }
 
 /**
- * Receives Int16 Multi Array messages from the Controller Node
+ * Receives UInt32 messages from the Controller Node
  * The robot has five degrees of freedom: 
  * Linear x, y, z, and yaw
  * 
@@ -134,33 +155,36 @@ void motorControlCallback (const void * msgin){
   const std_msgs__msg__UInt32 * msg = (const std_msgs__msg__UInt32 *)msgin;
 
   // convert from bit representation to PWM pulse width in microseconds
-//  decode_thruster_data(msg->data);
+  decode_thruster_data(msg->data);
 
-//  TLF.writeMicroseconds(msg->data);
+  //   send data to thursters
+  TLF.writeMicroseconds(pwm_data->tlf);
+  TLT.writeMicroseconds(pwm_data->tlt);
+  TLB.writeMicroseconds(pwm_data->tlb);
+  TRF.writeMicroseconds(pwm_data->trf);
+  TRT.writeMicroseconds(pwm_data->trt);
+  TRB.writeMicroseconds(pwm_data->trb);
 
-//   send data to thursters
-//  TLF.writeMicroseconds(pwm_data->tlf);
-//  TLT.writeMicroseconds(pwm_data->tlt);
-//  TLB.writeMicroseconds(pwm_data->tlb);
-//  TRF.writeMicroseconds(pwm_data->trf);
-//  TRT.writeMicroseconds(pwm_data->trt);
-//  TRB.writeMicroseconds(pwm_data->trb);
+  // set published message to be the PWM signal sent to TLF
+  out_msg.data = pwm_data->tlf;
+  // out_msg.data = msg->data;
 
-//  out_msg.data = pwm_data->tlf;
-  out_msg.data = msg->data;
-
-  RCSOFTCHECK(rcl_publish(&publisher, &out_msg, NULL));
+  // publish data via debug_publisher
+  RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
 }
 
-//ros::Subscriber<std_msgs::msg::Int32MultiArray> motor_arduino_node("arduino", &motorControlCallback);
+/***********************/
+/*       Teensy        */
+/***********************/
 
-/***********************/
-/*       Arduino       */
-/***********************/
 void setup()  {
   
   set_microros_transports();
 
+  /*
+   * this will initialize PWM signal control on the specified pins. Default 
+   * signal is 1500 microseconds.
+   */
   TLF.attach(THRUSTER_LEFT_FRONT);
   TLT.attach(THRUSTER_LEFT_TOP);
   TLB.attach(THRUSTER_LEFT_BACK);
@@ -185,9 +209,9 @@ void setup()  {
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt32),
     "motor_control"));
 
-    // create publisher
+  // create publisher
   RCCHECK(rclc_publisher_init_default(
-    &publisher,
+    &debug_publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt32),
     "debug_publisher"));
@@ -199,18 +223,18 @@ void setup()  {
 }
 
 void loop()  {
-//  // Don't do anything if e-stop triggered
-//  if (!e_stop_triggered) {
-//    // Check if e-stop triggered
-//    int current_e_stop_value = analogRead(E_STOP_ANALOG_PIN);
-//    if (current_e_stop_value < E_STOP_ADC_THRESHOLD){
-//      e_stop_triggered = true;
-//    }
-//    else {
-//      e_stop_triggered = false;
-//    }
-//  }
+  // Don't do anything if e-stop triggered
+  if (!e_stop_triggered) {
+    // Check if e-stop triggered
+    int current_e_stop_value = analogRead(E_STOP_ANALOG_PIN);
+    if (current_e_stop_value < E_STOP_ADC_THRESHOLD){
+      e_stop_triggered = true;
+    }
+    else {
+      e_stop_triggered = false;
+    }
+  }
+
   delay(100);
   RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
-  
 }
