@@ -47,7 +47,7 @@
 #define TRT_MASK 0x1f << TRT_SHIFT_VAL
 #define TRB_MASK 0x1f << TRB_SHIFT_VAL
 
-#define ISOLATE_BITS(data, thruster) (data&thruster##_MASK) >> thruster##_SHIFT_VAL
+#define ISOLATE_BITS(data, thruster) (data & thruster##_MASK) >> thruster##_SHIFT_VAL
 #define CONVERT_MICROSECONDS(bit_val) 1100 + bit_val*25
 
 /***********************/
@@ -103,7 +103,7 @@ struct thruster_data {
   uint32_t trt;
   uint32_t trb;
 };
-struct thruster_data *pwm_data;
+struct thruster_data pwm_data;
 
 /* 
  * Decodes from message bitwise representation to a pulse length in 
@@ -123,12 +123,12 @@ void decode_thruster_data(uint32_t msg_data) {
   uint32_t trt_bits = ISOLATE_BITS(msg_data, TRT);
   uint32_t trb_bits = ISOLATE_BITS(msg_data, TRB);
 
-  pwm_data->tlf = CONVERT_MICROSECONDS(tlf_bits);
-  pwm_data->tlt = CONVERT_MICROSECONDS(tlt_bits);
-  pwm_data->tlb = CONVERT_MICROSECONDS(tlb_bits);
-  pwm_data->trf = CONVERT_MICROSECONDS(trf_bits);
-  pwm_data->trt = CONVERT_MICROSECONDS(trt_bits);
-  pwm_data->trb = CONVERT_MICROSECONDS(trb_bits);
+  pwm_data.tlf = CONVERT_MICROSECONDS(tlf_bits);
+  pwm_data.tlt = CONVERT_MICROSECONDS(tlt_bits);
+  pwm_data.tlb = CONVERT_MICROSECONDS(tlb_bits);
+  pwm_data.trf = CONVERT_MICROSECONDS(trf_bits);
+  pwm_data.trt = CONVERT_MICROSECONDS(trt_bits);
+  pwm_data.trb = CONVERT_MICROSECONDS(trb_bits);
 }
 
 /*
@@ -158,16 +158,16 @@ void motorControlCallback (const void * msgin){
   decode_thruster_data(msg->data);
 
   //   send data to thursters
-  TLF.writeMicroseconds(pwm_data->tlf);
-  TLT.writeMicroseconds(pwm_data->tlt);
-  TLB.writeMicroseconds(pwm_data->tlb);
-  TRF.writeMicroseconds(pwm_data->trf);
-  TRT.writeMicroseconds(pwm_data->trt);
-  TRB.writeMicroseconds(pwm_data->trb);
+  TLF.writeMicroseconds(pwm_data.tlf);
+  TLT.writeMicroseconds(pwm_data.tlt);
+  TLB.writeMicroseconds(pwm_data.tlb);
+  TRF.writeMicroseconds(pwm_data.trf);
+  TRT.writeMicroseconds(pwm_data.trt);
+  TRB.writeMicroseconds(pwm_data.trb);
 
   // set published message to be the PWM signal sent to TLF
-  out_msg.data = pwm_data->tlf;
-  // out_msg.data = msg->data;
+  out_msg.data = pwm_data.tlf;
+//   out_msg.data = msg->data;
 
   // publish data via debug_publisher
   RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
