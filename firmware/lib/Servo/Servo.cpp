@@ -42,6 +42,8 @@
  
 */
 
+#if defined(__AVR__)
+
 #include <avr/interrupt.h>
 #include <Arduino.h> 
 
@@ -100,28 +102,28 @@ static inline void handle_interrupts(timer16_Sequence_t timer, volatile uint16_t
 #ifndef WIRING // Wiring pre-defines signal handlers so don't define any if compiling for the Wiring platform
 // Interrupt handlers for Arduino 
 #if defined(_useTimer1)
-ISR(TIMER1_COMPA_vect) 
+SIGNAL (TIMER1_COMPA_vect) 
 { 
   handle_interrupts(_timer1, &TCNT1, &OCR1A); 
 }
 #endif
 
 #if defined(_useTimer3)
-ISR(TIMER3_COMPA_vect) 
+SIGNAL (TIMER3_COMPA_vect) 
 { 
   handle_interrupts(_timer3, &TCNT3, &OCR3A); 
 }
 #endif
 
 #if defined(_useTimer4)
-ISR(TIMER4_COMPA_vect) 
+SIGNAL (TIMER4_COMPA_vect) 
 {
   handle_interrupts(_timer4, &TCNT4, &OCR4A); 
 }
 #endif
 
 #if defined(_useTimer5)
-ISR(TIMER5_COMPA_vect) 
+SIGNAL (TIMER5_COMPA_vect) 
 {
   handle_interrupts(_timer5, &TCNT5, &OCR5A); 
 }
@@ -283,24 +285,24 @@ void Servo::detach()
   }
 }
 
-void Servo::write(int value, bool invert)
-{ 
+void Servo::write(int value)
+{  
   if(value < MIN_PULSE_WIDTH)
   {  // treat values less than 544 as angles in degrees (valid values in microseconds are handled as microseconds)
     if(value < 0) value = 0;
     if(value > 180) value = 180;
-    value = map(value, 0, 180, SERVO_MIN(),  SERVO_MAX());
+    value = map(value, 0, 180, SERVO_MIN(),  SERVO_MAX());      
   }
-  this->writeMicroseconds(value, invert);
+  this->writeMicroseconds(value, 0);
 }
 
-void Servo::writeMicroseconds(int value, bool invert)
+void Servo::writeMicroseconds(int value, int invert)
 {
   // calculate and store the values for the given channel
   byte channel = this->servoIndex;
   if( (channel < MAX_SERVOS) )   // ensure channel is valid
   {
-	  if (invert == 1)
+    if (invert)
 	  {
 		  value = REFRESH_INTERVAL - value; //Inverts pulse over the period between "updates" or pulses
 		  if (value > REFRESH_INTERVAL-SERVO_MIN())          // ensure pulse width is valid
@@ -309,10 +311,12 @@ void Servo::writeMicroseconds(int value, bool invert)
 			  value = REFRESH_INTERVAL-SERVO_MAX();
 	  }
 	  else 
-		  if (value < SERVO_MIN())          // ensure pulse width is valid
-			  value = SERVO_MIN();
-		  else if (value > SERVO_MAX())
-			  value = SERVO_MAX();
+    {
+    if( value < SERVO_MIN() )          // ensure pulse width is valid
+      value = SERVO_MIN();
+    else if( value > SERVO_MAX() )
+      value = SERVO_MAX();
+    }
 
     value = value - TRIM_DURATION;
     value = usToTicks(value);  // convert to ticks after compensating for interrupt overhead - 12 Aug 2009
@@ -344,3 +348,552 @@ bool Servo::attached()
 {
   return servos[this->servoIndex].Pin.isActive ;
 }
+
+
+
+#elif defined(__arm__) && (defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__))
+// ******************************************************************************
+// Teensy 3.0 implementation, using Programmable Delay Block
+// ******************************************************************************
+
+#include <Arduino.h> 
+#include "Servo.h"
+
+#define PDB_CONFIG (PDB_SC_TRGSEL(15) | PDB_SC_PDBEN | PDB_SC_PDBIE \
+	| PDB_SC_CONT | PDB_SC_PRESCALER(2) | PDB_SC_MULT(0))
+#define PDB_PRESCALE 4 // 
+#define usToTicks(us)    ((us) * (F_BUS / 1000) / PDB_PRESCALE / 1000)
+#define ticksToUs(ticks) ((ticks) * PDB_PRESCALE * 1000 / (F_BUS / 1000))
+
+#if SERVOS_PER_TIMER <= 16
+static uint16_t servo_active_mask = 0;
+static uint16_t servo_allocated_mask = 0;
+#else
+static uint32_t servo_active_mask = 0;
+static uint32_t servo_allocated_mask = 0;
+#endif
+static uint8_t servo_pin[MAX_SERVOS];
+static uint16_t servo_ticks[MAX_SERVOS];
+
+Servo::Servo()
+{
+	uint16_t mask;
+
+	servoIndex = 0;
+	for (mask=1; mask < (1<<MAX_SERVOS); mask <<= 1) {
+		if (!(servo_allocated_mask & mask)) {
+			servo_allocated_mask |= mask;
+			servo_active_mask &= ~mask;
+			return;
+		}
+		servoIndex++;
+	}
+	servoIndex = INVALID_SERVO;
+}
+
+uint8_t Servo::attach(int pin)
+{
+	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+}
+
+uint8_t Servo::attach(int pin, int minimum, int maximum)
+{
+	if (servoIndex < MAX_SERVOS) {
+		pinMode(pin, OUTPUT);
+		servo_pin[servoIndex] = pin;
+		servo_ticks[servoIndex] = usToTicks(DEFAULT_PULSE_WIDTH);
+		servo_active_mask |= (1<<servoIndex);
+		min_ticks = usToTicks(minimum);
+		max_ticks = usToTicks(maximum);
+		if (!(SIM_SCGC6 & SIM_SCGC6_PDB)) {
+			SIM_SCGC6 |= SIM_SCGC6_PDB; // TODO: use bitband for atomic bitset
+			PDB0_MOD = 0xFFFF;
+			PDB0_CNT = 0;
+			PDB0_IDLY = 0;
+			PDB0_SC = PDB_CONFIG;
+			// TODO: maybe this should be a higher priority than most
+			// other interrupts (init all to some default?)
+			PDB0_SC = PDB_CONFIG | PDB_SC_SWTRIG;
+			NVIC_SET_PRIORITY(IRQ_PDB, 32);
+		}
+		NVIC_ENABLE_IRQ(IRQ_PDB);
+	}
+	return servoIndex;
+}
+
+void Servo::detach()  
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_active_mask &= ~(1<<servoIndex);
+	servo_allocated_mask &= ~(1<<servoIndex);
+	if (servo_active_mask == 0) {
+		NVIC_DISABLE_IRQ(IRQ_PDB);
+	}
+}
+
+void Servo::write(int value)
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	if (value >= MIN_PULSE_WIDTH) {
+		writeMicroseconds(value, 0);
+		return;
+	} else if (value > 180) {
+		value = 180;
+	} else if (value < 0) {
+		value = 0;
+	}
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
+}
+
+void Servo::writeMicroseconds(int value)
+{
+	value = usToTicks(value);
+	if (value < min_ticks) {
+		value = min_ticks;
+	} else if (value > max_ticks) {
+		value = max_ticks;
+	}
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = value;
+}
+
+int Servo::read() // return the value as degrees
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);     
+}
+
+int Servo::readMicroseconds()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return ticksToUs(servo_ticks[servoIndex]);
+}
+
+bool Servo::attached()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return servo_active_mask & (1<<servoIndex);
+}
+
+extern "C" void pdb_isr(void)
+{
+	static int8_t channel=0, channel_high=MAX_SERVOS;
+	static uint32_t tick_accum=0;
+	uint32_t ticks;
+	int32_t wait_ticks;
+
+	// first, if any channel was left high from the previous
+	// run, now is the time to shut it off
+	if (servo_active_mask & (1<<channel_high)) {
+		digitalWrite(servo_pin[channel_high], LOW);
+		channel_high = MAX_SERVOS;
+	}
+	// search for the next channel to turn on
+	while (channel < MAX_SERVOS) {
+		if (servo_active_mask & (1<<channel)) {
+			digitalWrite(servo_pin[channel], HIGH);
+			channel_high = channel;
+			ticks = servo_ticks[channel];
+			tick_accum += ticks;
+			PDB0_IDLY += ticks;
+			PDB0_SC = PDB_CONFIG | PDB_SC_LDOK;
+			channel++;
+			return;
+		}
+		channel++;
+	}
+	// when all channels have output, wait for the
+	// minimum refresh interval
+	wait_ticks = usToTicks(REFRESH_INTERVAL) - tick_accum;
+	if (wait_ticks < usToTicks(100)) wait_ticks = usToTicks(100);
+	else if (wait_ticks > 60000) wait_ticks = 60000;
+	tick_accum += wait_ticks;
+	PDB0_IDLY += wait_ticks;
+	PDB0_SC = PDB_CONFIG | PDB_SC_LDOK;
+	// if this wait is enough to satisfy the refresh
+	// interval, next time begin again at channel zero 
+	if (tick_accum >= usToTicks(REFRESH_INTERVAL)) {
+		tick_accum = 0;
+		channel = 0;
+	}
+}
+
+
+
+#elif defined(__arm__) && defined(__MKL26Z64__)
+// ******************************************************************************
+// Teensy-LC implementation, using Low Power Timer
+// ******************************************************************************
+
+#include <Arduino.h> 
+#include "Servo.h"
+
+#define LPTMR_CONFIG     LPTMR_CSR_TIE | LPTMR_CSR_TFC | LPTMR_CSR_TEN
+#define usToTicks(us)    ((us) * 8)
+#define ticksToUs(ticks) ((ticks) / 8)
+
+#if SERVOS_PER_TIMER <= 16
+static uint16_t servo_active_mask = 0;
+static uint16_t servo_allocated_mask = 0;
+#else
+static uint32_t servo_active_mask = 0;
+static uint32_t servo_allocated_mask = 0;
+#endif
+static uint8_t servo_pin[MAX_SERVOS];
+static uint16_t servo_ticks[MAX_SERVOS];
+
+Servo::Servo()
+{
+	uint16_t mask;
+
+	servoIndex = 0;
+	for (mask=1; mask < (1<<MAX_SERVOS); mask <<= 1) {
+		if (!(servo_allocated_mask & mask)) {
+			servo_allocated_mask |= mask;
+			servo_active_mask &= ~mask;
+			return;
+		}
+		servoIndex++;
+	}
+	servoIndex = INVALID_SERVO;
+}
+
+uint8_t Servo::attach(int pin)
+{
+	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+}
+
+uint8_t Servo::attach(int pin, int minimum, int maximum)
+{
+	if (servoIndex < MAX_SERVOS) {
+		pinMode(pin, OUTPUT);
+		servo_pin[servoIndex] = pin;
+		servo_ticks[servoIndex] = usToTicks(DEFAULT_PULSE_WIDTH);
+		servo_active_mask |= (1<<servoIndex);
+		min_ticks = usToTicks(minimum);
+		max_ticks = usToTicks(maximum);
+		if (!(SIM_SCGC5 & SIM_SCGC5_LPTIMER)) {
+			SIM_SCGC5 |= SIM_SCGC5_LPTIMER; // TODO: use BME
+			OSC0_CR |= OSC_ERCLKEN;
+			LPTMR0_CSR = 0;
+			LPTMR0_PSR = LPTMR_PSR_PRESCALE(0) | LPTMR_PSR_PCS(3); // 8 MHz
+			LPTMR0_CMR = 1;
+			LPTMR0_CSR = LPTMR_CONFIG;
+			NVIC_SET_PRIORITY(IRQ_LPTMR, 32);
+		}
+		NVIC_ENABLE_IRQ(IRQ_LPTMR);
+	}
+	return servoIndex;
+}
+
+void Servo::detach()  
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_active_mask &= ~(1<<servoIndex);
+	servo_allocated_mask &= ~(1<<servoIndex);
+	if (servo_active_mask == 0) {
+		NVIC_DISABLE_IRQ(IRQ_LPTMR);
+	}
+}
+
+void Servo::write(int value)
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	if (value >= MIN_PULSE_WIDTH) {
+		writeMicroseconds(value);
+		return;
+	} else if (value > 180) {
+		value = 180;
+	} else if (value < 0) {
+		value = 0;
+	}
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
+}
+
+void Servo::writeMicroseconds(int value)
+{
+	value = usToTicks(value);
+	if (value < min_ticks) {
+		value = min_ticks;
+	} else if (value > max_ticks) {
+		value = max_ticks;
+	}
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = value;
+}
+
+int Servo::read() // return the value as degrees
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);     
+}
+
+int Servo::readMicroseconds()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return ticksToUs(servo_ticks[servoIndex]);
+}
+
+bool Servo::attached()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return servo_active_mask & (1<<servoIndex);
+}
+
+void lptmr_isr(void)
+{
+	static int8_t channel=0, channel_high=MAX_SERVOS;
+	static uint32_t tick_accum=0;
+	uint32_t ticks;
+	int32_t wait_ticks;
+
+	// first, if any channel was left high from the previous
+	// run, now is the time to shut it off
+	if (servo_active_mask & (1<<channel_high)) {
+		digitalWrite(servo_pin[channel_high], LOW);
+		channel_high = MAX_SERVOS;
+	}
+	// search for the next channel to turn on
+	while (channel < MAX_SERVOS) {
+		if (servo_active_mask & (1<<channel)) {
+			digitalWrite(servo_pin[channel], HIGH);
+			channel_high = channel;
+			ticks = servo_ticks[channel];
+			tick_accum += ticks;
+			LPTMR0_CMR += ticks;
+			LPTMR0_CSR = LPTMR_CONFIG | LPTMR_CSR_TCF;
+			channel++;
+			return;
+		}
+		channel++;
+	}
+	// when all channels have output, wait for the
+	// minimum refresh interval
+	wait_ticks = usToTicks(REFRESH_INTERVAL) - tick_accum;
+	if (wait_ticks < usToTicks(100)) wait_ticks = usToTicks(100);
+	else if (wait_ticks > 60000) wait_ticks = 60000;
+	tick_accum += wait_ticks;
+	LPTMR0_CMR += wait_ticks;
+	LPTMR0_CSR = LPTMR_CONFIG | LPTMR_CSR_TCF;
+	// if this wait is enough to satisfy the refresh
+	// interval, next time begin again at channel zero 
+	if (tick_accum >= usToTicks(REFRESH_INTERVAL)) {
+		tick_accum = 0;
+		channel = 0;
+	}
+}
+
+
+#elif defined(__arm__) && (defined(__IMXRT1052__) || defined(__IMXRT1062__))
+// ******************************************************************************
+// Teensy generic implementation, using IntervalTimer
+// ******************************************************************************
+
+#include <Arduino.h>
+#include <IntervalTimer.h>
+#include "Servo.h"
+#include "debug/printf.h"
+
+#define usToTicks(us)    ((us) * 16)
+#define ticksToUs(ticks) ((ticks) / 16)
+#define ticksToUs_f(t)   ((float)(t) * 0.0625f)
+
+static uint32_t servo_active_mask = 0;
+static uint32_t servo_allocated_mask = 0;
+static uint8_t servo_pin[MAX_SERVOS];
+static uint16_t servo_ticks[MAX_SERVOS];
+
+// track signal inversion
+static int inverted = 0;
+
+static IntervalTimer timer;
+static void isr(void);
+
+Servo::Servo()
+{
+	uint16_t mask;
+
+	servoIndex = 0;
+	for (mask=1; mask < (1<<MAX_SERVOS); mask <<= 1) {
+		if (!(servo_allocated_mask & mask)) {
+			servo_allocated_mask |= mask;
+			servo_active_mask &= ~mask;
+			return;
+		}
+		servoIndex++;
+	}
+	servoIndex = INVALID_SERVO;
+}
+
+uint8_t Servo::attach(int pin)
+{
+	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+}
+
+uint8_t Servo::attach(int pin, int minimum, int maximum)
+{
+	if (servoIndex < MAX_SERVOS) {
+		pinMode(pin, OUTPUT);
+		servo_pin[servoIndex] = pin;
+		servo_ticks[servoIndex] = usToTicks(DEFAULT_PULSE_WIDTH);
+		servo_active_mask |= (1<<servoIndex);
+		min_ticks = usToTicks(minimum);
+		max_ticks = usToTicks(maximum);
+		if ((IRQ_NUMBER_t)timer >= NVIC_NUM_INTERRUPTS) {
+			timer.begin(isr, 10);
+		}
+	}
+	return servoIndex;
+}
+
+void Servo::detach()
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_active_mask &= ~(1<<servoIndex);
+	servo_allocated_mask &= ~(1<<servoIndex);
+	if (servo_active_mask == 0) {
+		timer.end();
+	}
+}
+
+void Servo::write(int value)
+{
+	if (servoIndex >= MAX_SERVOS) return;
+	if (value >= MIN_PULSE_WIDTH) {
+		writeMicroseconds(value, 0);
+		return;
+	} else if (value > 180) {
+		value = 180;
+	} else if (value < 0) {
+		value = 0;
+	}
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
+}
+
+// int Servo::writeMicroseconds(uint32_t value, int invert)
+// {
+// 	// invert the signal if needed
+// 	if (invert)
+// 		value = usToTicks(REFRESH_INTERVAL - value);
+// 	else
+// 		value = usToTicks(value);
+
+
+// 	// check bounds
+// 	if (invert)
+// 	{
+// 		uint32_t total_ticks = usToTicks(REFRESH_INTERVAL);
+// 		if (value > total_ticks-min_ticks)          // ensure pulse width is valid
+// 			value = total_ticks-min_ticks;
+// 		else if (value < total_ticks-max_ticks)
+// 			value = total_ticks-max_ticks;
+// 	}
+// 	else
+// 	{
+// 		if (value < min_ticks) {
+// 			value = min_ticks;
+// 		} else if (value > max_ticks) {
+// 			value = max_ticks;
+// 		}		
+// 	}
+	
+// 	if (servoIndex >= MAX_SERVOS) return -1;
+// 	servo_ticks[servoIndex] = value;
+
+// 	return ticksToUs(value);
+// }
+
+void Servo::writeMicroseconds(int value, int invert)
+{
+	// update signal inversion state
+	inverted = invert;
+	
+	value = usToTicks(value);
+
+	// check bounds
+	if (value < min_ticks) {
+		value = min_ticks;
+	} else if (value > max_ticks) {
+		value = max_ticks;
+	}		
+	
+	if (servoIndex >= MAX_SERVOS) return;
+	servo_ticks[servoIndex] = value;
+}
+
+int Servo::read() // return the value as degrees
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);
+}
+
+int Servo::readMicroseconds()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return ticksToUs(servo_ticks[servoIndex]);
+}
+
+bool Servo::attached()
+{
+	if (servoIndex >= MAX_SERVOS) return 0;
+	return servo_active_mask & (1<<servoIndex);
+}
+
+static void isr(void)
+{
+	static uint8_t channel=MAX_SERVOS;
+	static uint8_t next_low=255;
+	static uint32_t tick_accum=0;
+
+	// If a pin is still HIGH from a prior run, turn it off
+	if (next_low < 255) {
+		int signal = inverted ? HIGH : LOW;
+		digitalWrite(next_low, signal);
+	}
+
+	// If we're on an active channel, drive it HIGH
+	if (channel < MAX_SERVOS && (servo_active_mask & (1<<channel))) {
+		uint8_t pin = servo_pin[channel];
+		int signal = inverted ? LOW : HIGH;
+		digitalWrite(pin, signal);
+		next_low = pin;
+	} else {
+		next_low = 255;
+	}
+
+	// Generate an oscilloscope trigger pulse at beginning
+	//if (channel == __builtin_ctz(servo_active_mask)) {
+		//digitalWrite(2, HIGH);
+		//delayMicroseconds(1);
+		//digitalWrite(2, LOW);
+	//}
+
+	// Find the next channel and set the timer up
+	if (++channel >= MAX_SERVOS) {
+		channel = 0;
+	}
+	do {
+		if (servo_active_mask & (1<<channel)) {
+			uint32_t ticks = servo_ticks[channel];
+			tick_accum += ticks;
+			timer.update(ticksToUs_f(ticks));
+			return;
+		}
+		channel++;
+	} while (channel < MAX_SERVOS);
+
+	// when all channels have output, wait for the refresh interval
+	if (tick_accum < usToTicks(REFRESH_INTERVAL)) {
+		timer.update(ticksToUs_f(usToTicks(REFRESH_INTERVAL) - tick_accum));
+	} else {
+		timer.update(ticksToUs_f(100));
+	}
+	tick_accum = 0;
+}
+
+
+
+#endif

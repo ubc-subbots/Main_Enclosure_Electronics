@@ -48,7 +48,7 @@
 #define TRB_MASK 0x1f << TRB_SHIFT_VAL
 
 #define ISOLATE_BITS(data, thruster) (data & thruster##_MASK) >> thruster##_SHIFT_VAL
-#define CONVERT_MICROSECONDS(bit_val) 1100 + bit_val*25
+#define CONVERT_MICROSECONDS(bit_val) 1356 + bit_val*9
 
 /***********************/
 /*    Calib Consts     */
@@ -158,12 +158,12 @@ void motorControlCallback (const void * msgin){
   decode_thruster_data(msg->data);
 
   //   send data to thursters
-  TLF.writeMicroseconds(pwm_data.tlf);
-  TLT.writeMicroseconds(pwm_data.tlt);
-  TLB.writeMicroseconds(pwm_data.tlb);
-  TRF.writeMicroseconds(pwm_data.trf);
-  TRT.writeMicroseconds(pwm_data.trt);
-  TRB.writeMicroseconds(pwm_data.trb);
+  TLF.writeMicroseconds(pwm_data.tlf, 1);
+  TLT.writeMicroseconds(pwm_data.tlt, 1);
+  TLB.writeMicroseconds(pwm_data.tlb, 1);
+  TRF.writeMicroseconds(pwm_data.trf, 1);
+  TRT.writeMicroseconds(pwm_data.trt, 1);
+  TRB.writeMicroseconds(pwm_data.trb, 1);
 
   // set published message to be the PWM signal sent to TLF
   out_msg.data = pwm_data.tlf;
@@ -220,6 +220,20 @@ void setup()  {
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &motorControlCallback, ON_NEW_DATA));
 
+  //   init sequence
+  TLF.writeMicroseconds(1500, 1);
+  TLT.writeMicroseconds(1500, 1);
+  TLB.writeMicroseconds(1500, 1);
+  TRF.writeMicroseconds(1500, 1);
+  TRT.writeMicroseconds(1500, 1);
+  TRB.writeMicroseconds(1500, 1);
+
+  out_msg.data = TLF.readMicroseconds();
+//   out_msg.data = msg->data;
+
+  delay(7000);
+  // publish data via debug_publisher
+  RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
 }
 
 void loop()  {
