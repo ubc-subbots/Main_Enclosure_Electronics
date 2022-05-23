@@ -1,5 +1,5 @@
 /*
-  Servo.h - Interrupt driven Servo library for Arduino using 16 bit timers- Version 2
+  ServoInvertible.h - Interrupt driven ServoInvertible library for Arduino using 16 bit timers- Version 2
   Copyright (c) 2009 Michael Margolis.  All right reserved.
 
   This library is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
 
 /* 
   
-  A servo is activated by creating an instance of the Servo class passing the desired pin to the attach() method.
+  A servo is activated by creating an instance of the ServoInvertible class passing the desired pin to the attach() method.
   The servos are pulsed in the background using the value most recently written using the write() method
 
   Note that analogWrite of PWM on pins associated with the timer are disabled when the first servo is attached.
@@ -28,7 +28,7 @@
 
   The methods are:
 
-   Servo - Class for manipulating servo motors connected to Arduino pins.
+   ServoInvertible - Class for manipulating servo motors connected to Arduino pins.
 
    attach(pin )  - Attaches a servo motor to an i/o pin.
    attach(pin, min, max  ) - Attaches to a pin setting min and max values in microseconds
@@ -42,13 +42,13 @@
    detach()    - Stops an attached servos from pulsing its i/o pin. 
  */
 
-#ifndef Servo_h
-#define Servo_h
+#ifndef ServoInvertible_h
+#define ServoInvertible_h
 
 #include <inttypes.h>
 
 /* 
- * Defines for 16 bit timers used with  Servo library 
+ * Defines for 16 bit timers used with  ServoInvertible library 
  *
  * If _useTimerX is defined then TimerX is a 16 bit timer on the curent board
  * timer16_Sequence_t enumerates the sequence that the timers should be allocated
@@ -83,7 +83,7 @@ typedef enum { _timer3, _timer1, _Nbr_16timers } timer16_Sequence_t ;
 typedef enum { _timer1, _Nbr_16timers } timer16_Sequence_t ;                  
 #endif
 
-#define Servo_VERSION           2      // software version of this library
+#define ServoInvertible_VERSION           2      // software version of this library
 
 #define MIN_PULSE_WIDTH       544     // the shortest pulse sent to a servo  
 #define MAX_PULSE_WIDTH      2400     // the longest pulse sent to a servo 
@@ -98,17 +98,17 @@ typedef enum { _timer1, _Nbr_16timers } timer16_Sequence_t ;
 typedef struct  {
   uint8_t nbr        :6 ;             // a pin number from 0 to 63
   uint8_t isActive   :1 ;             // true if this channel is enabled, pin not pulsed if false 
-} ServoPin_t   ;  
+} ServoInvertiblePin_t   ;  
 
 typedef struct {
-  ServoPin_t Pin;
+  ServoInvertiblePin_t Pin;
   unsigned int ticks;
 } servo_t;
 
-class Servo
+class ServoInvertible
 {
 public:
-  Servo();
+  ServoInvertible();
   uint8_t attach(int pin);           // attach the given pin to the next free channel, sets pinMode, returns channel number or 0 if failure
   uint8_t attach(int pin, int min, int max); // as above but also sets min and max values for writes. 
   void detach();

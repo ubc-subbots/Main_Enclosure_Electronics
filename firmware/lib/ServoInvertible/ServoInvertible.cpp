@@ -1,5 +1,5 @@
 /*
- Servo.cpp - Interrupt driven Servo library for Arduino using 16 bit timers- Version 2
+ ServoInvertible.cpp - Interrupt driven ServoInvertible library for Arduino using 16 bit timers- Version 2
  Copyright (c) 2009 Michael Margolis.  All right reserved.
  
  This library is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
 
 /* 
  
- A servo is activated by creating an instance of the Servo class passing the desired pin to the attach() method.
+ A servo is activated by creating an instance of the ServoInvertible class passing the desired pin to the attach() method.
  The servos are pulsed in the background using the value most recently written using the write() method
  
  Note that analogWrite of PWM on pins associated with the timer are disabled when the first servo is attached.
@@ -27,7 +27,7 @@
  
  The methods are:
  
- Servo - Class for manipulating servo motors connected to Arduino pins.
+ ServoInvertible - Class for manipulating servo motors connected to Arduino pins.
  
  attach(pin )  - Attaches a servo motor to an i/o pin.
  attach(pin, min, max  ) - Attaches to a pin setting min and max values in microseconds
@@ -47,7 +47,7 @@
 #include <avr/interrupt.h>
 #include <Arduino.h> 
 
-#include "Servo.h"
+#include "ServoInvertible.h"
 
 #define usToTicks(_us)    (( clockCyclesPerMicrosecond()* _us) / 8)     // converts microseconds to tick (assumes prescale of 8)  // 12 Aug 2009
 #define ticksToUs(_ticks) (( (unsigned)_ticks * 8)/ clockCyclesPerMicrosecond() ) // converts from ticks back to microseconds
@@ -60,7 +60,7 @@
 static servo_t servos[MAX_SERVOS];                          // static array of servo structures
 static volatile int8_t Channel[_Nbr_16timers ];             // counter for the servo being pulsed for each timer (or -1 if refresh interval)
 
-uint8_t ServoCount = 0;                                     // the total number of attached servos
+uint8_t ServoInvertibleCount = 0;                                     // the total number of attached servos
 
 
 // convenience macros
@@ -79,12 +79,12 @@ static inline void handle_interrupts(timer16_Sequence_t timer, volatile uint16_t
   if( Channel[timer] < 0 )
     *TCNTn = 0; // channel set to -1 indicated that refresh interval completed so reset the timer 
   else{
-    if( SERVO_INDEX(timer,Channel[timer]) < ServoCount && SERVO(timer,Channel[timer]).Pin.isActive == true )  
+    if( SERVO_INDEX(timer,Channel[timer]) < ServoInvertibleCount && SERVO(timer,Channel[timer]).Pin.isActive == true )  
       digitalWrite( SERVO(timer,Channel[timer]).Pin.nbr,LOW); // pulse this channel low if activated   
   }
 
   Channel[timer]++;    // increment to the next channel
-  if( SERVO_INDEX(timer,Channel[timer]) < ServoCount && Channel[timer] < SERVOS_PER_TIMER) {
+  if( SERVO_INDEX(timer,Channel[timer]) < ServoInvertibleCount && Channel[timer] < SERVOS_PER_TIMER) {
     *OCRnA = *TCNTn + SERVO(timer,Channel[timer]).ticks;
     if(SERVO(timer,Channel[timer]).Pin.isActive == true)     // check if activated
       digitalWrite( SERVO(timer,Channel[timer]).Pin.nbr,HIGH); // its an active channel so pulse it high   
@@ -244,22 +244,22 @@ static boolean isTimerActive(timer16_Sequence_t timer)
 
 /****************** end of static functions ******************************/
 
-Servo::Servo()
+ServoInvertible::ServoInvertible()
 {
-  if( ServoCount < MAX_SERVOS) {
-    this->servoIndex = ServoCount++;                    // assign a servo index to this instance
+  if( ServoInvertibleCount < MAX_SERVOS) {
+    this->servoIndex = ServoInvertibleCount++;                    // assign a servo index to this instance
 	servos[this->servoIndex].ticks = usToTicks(DEFAULT_PULSE_WIDTH);   // store default values  - 12 Aug 2009
   }
   else
     this->servoIndex = INVALID_SERVO ;  // too many servos 
 }
 
-uint8_t Servo::attach(int pin)
+uint8_t ServoInvertible::attach(int pin)
 {
   return this->attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
 }
 
-uint8_t Servo::attach(int pin, int min, int max)
+uint8_t ServoInvertible::attach(int pin, int min, int max)
 {
   if(this->servoIndex < MAX_SERVOS ) {
     pinMode( pin, OUTPUT) ;                                   // set servo pin to output
@@ -276,7 +276,7 @@ uint8_t Servo::attach(int pin, int min, int max)
   return this->servoIndex ;
 }
 
-void Servo::detach()  
+void ServoInvertible::detach()  
 {
   servos[this->servoIndex].Pin.isActive = false;  
   timer16_Sequence_t timer = SERVO_INDEX_TO_TIMER(servoIndex);
@@ -285,7 +285,7 @@ void Servo::detach()
   }
 }
 
-void Servo::write(int value)
+void ServoInvertible::write(int value)
 {  
   if(value < MIN_PULSE_WIDTH)
   {  // treat values less than 544 as angles in degrees (valid values in microseconds are handled as microseconds)
@@ -296,7 +296,7 @@ void Servo::write(int value)
   this->writeMicroseconds(value, 0);
 }
 
-void Servo::writeMicroseconds(int value, int invert)
+void ServoInvertible::writeMicroseconds(int value, int invert)
 {
   // calculate and store the values for the given channel
   byte channel = this->servoIndex;
@@ -328,12 +328,12 @@ void Servo::writeMicroseconds(int value, int invert)
   }
 }
 
-int Servo::read() // return the value as degrees
+int ServoInvertible::read() // return the value as degrees
 {
   return  map( this->readMicroseconds()+1, SERVO_MIN(), SERVO_MAX(), 0, 180);     
 }
 
-int Servo::readMicroseconds()
+int ServoInvertible::readMicroseconds()
 {
   unsigned int pulsewidth;
   if( this->servoIndex != INVALID_SERVO )
@@ -344,7 +344,7 @@ int Servo::readMicroseconds()
   return pulsewidth;   
 }
 
-bool Servo::attached()
+bool ServoInvertible::attached()
 {
   return servos[this->servoIndex].Pin.isActive ;
 }
@@ -357,7 +357,7 @@ bool Servo::attached()
 // ******************************************************************************
 
 #include <Arduino.h> 
-#include "Servo.h"
+#include "ServoInvertible.h"
 
 #define PDB_CONFIG (PDB_SC_TRGSEL(15) | PDB_SC_PDBEN | PDB_SC_PDBIE \
 	| PDB_SC_CONT | PDB_SC_PRESCALER(2) | PDB_SC_MULT(0))
@@ -375,7 +375,7 @@ static uint32_t servo_allocated_mask = 0;
 static uint8_t servo_pin[MAX_SERVOS];
 static uint16_t servo_ticks[MAX_SERVOS];
 
-Servo::Servo()
+ServoInvertible::ServoInvertible()
 {
 	uint16_t mask;
 
@@ -391,12 +391,12 @@ Servo::Servo()
 	servoIndex = INVALID_SERVO;
 }
 
-uint8_t Servo::attach(int pin)
+uint8_t ServoInvertible::attach(int pin)
 {
 	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
 }
 
-uint8_t Servo::attach(int pin, int minimum, int maximum)
+uint8_t ServoInvertible::attach(int pin, int minimum, int maximum)
 {
 	if (servoIndex < MAX_SERVOS) {
 		pinMode(pin, OUTPUT);
@@ -421,7 +421,7 @@ uint8_t Servo::attach(int pin, int minimum, int maximum)
 	return servoIndex;
 }
 
-void Servo::detach()  
+void ServoInvertible::detach()  
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	servo_active_mask &= ~(1<<servoIndex);
@@ -431,7 +431,7 @@ void Servo::detach()
 	}
 }
 
-void Servo::write(int value)
+void ServoInvertible::write(int value)
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	if (value >= MIN_PULSE_WIDTH) {
@@ -446,7 +446,7 @@ void Servo::write(int value)
 	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
 }
 
-void Servo::writeMicroseconds(int value)
+void ServoInvertible::writeMicroseconds(int value)
 {
 	value = usToTicks(value);
 	if (value < min_ticks) {
@@ -458,19 +458,19 @@ void Servo::writeMicroseconds(int value)
 	servo_ticks[servoIndex] = value;
 }
 
-int Servo::read() // return the value as degrees
+int ServoInvertible::read() // return the value as degrees
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);     
 }
 
-int Servo::readMicroseconds()
+int ServoInvertible::readMicroseconds()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return ticksToUs(servo_ticks[servoIndex]);
 }
 
-bool Servo::attached()
+bool ServoInvertible::attached()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return servo_active_mask & (1<<servoIndex);
@@ -527,7 +527,7 @@ extern "C" void pdb_isr(void)
 // ******************************************************************************
 
 #include <Arduino.h> 
-#include "Servo.h"
+#include "ServoInvertible.h"
 
 #define LPTMR_CONFIG     LPTMR_CSR_TIE | LPTMR_CSR_TFC | LPTMR_CSR_TEN
 #define usToTicks(us)    ((us) * 8)
@@ -543,7 +543,7 @@ static uint32_t servo_allocated_mask = 0;
 static uint8_t servo_pin[MAX_SERVOS];
 static uint16_t servo_ticks[MAX_SERVOS];
 
-Servo::Servo()
+ServoInvertible::ServoInvertible()
 {
 	uint16_t mask;
 
@@ -559,12 +559,12 @@ Servo::Servo()
 	servoIndex = INVALID_SERVO;
 }
 
-uint8_t Servo::attach(int pin)
+uint8_t ServoInvertible::attach(int pin)
 {
 	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
 }
 
-uint8_t Servo::attach(int pin, int minimum, int maximum)
+uint8_t ServoInvertible::attach(int pin, int minimum, int maximum)
 {
 	if (servoIndex < MAX_SERVOS) {
 		pinMode(pin, OUTPUT);
@@ -587,7 +587,7 @@ uint8_t Servo::attach(int pin, int minimum, int maximum)
 	return servoIndex;
 }
 
-void Servo::detach()  
+void ServoInvertible::detach()  
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	servo_active_mask &= ~(1<<servoIndex);
@@ -597,7 +597,7 @@ void Servo::detach()
 	}
 }
 
-void Servo::write(int value)
+void ServoInvertible::write(int value)
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	if (value >= MIN_PULSE_WIDTH) {
@@ -612,7 +612,7 @@ void Servo::write(int value)
 	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
 }
 
-void Servo::writeMicroseconds(int value)
+void ServoInvertible::writeMicroseconds(int value)
 {
 	value = usToTicks(value);
 	if (value < min_ticks) {
@@ -624,19 +624,19 @@ void Servo::writeMicroseconds(int value)
 	servo_ticks[servoIndex] = value;
 }
 
-int Servo::read() // return the value as degrees
+int ServoInvertible::read() // return the value as degrees
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);     
 }
 
-int Servo::readMicroseconds()
+int ServoInvertible::readMicroseconds()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return ticksToUs(servo_ticks[servoIndex]);
 }
 
-bool Servo::attached()
+bool ServoInvertible::attached()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return servo_active_mask & (1<<servoIndex);
@@ -693,7 +693,7 @@ void lptmr_isr(void)
 
 #include <Arduino.h>
 #include <IntervalTimer.h>
-#include "Servo.h"
+#include "ServoInvertible.h"
 #include "debug/printf.h"
 
 #define usToTicks(us)    ((us) * 16)
@@ -711,7 +711,7 @@ static int inverted = 0;
 static IntervalTimer timer;
 static void isr(void);
 
-Servo::Servo()
+ServoInvertible::ServoInvertible()
 {
 	uint16_t mask;
 
@@ -727,12 +727,12 @@ Servo::Servo()
 	servoIndex = INVALID_SERVO;
 }
 
-uint8_t Servo::attach(int pin)
+uint8_t ServoInvertible::attach(int pin)
 {
 	return attach(pin, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
 }
 
-uint8_t Servo::attach(int pin, int minimum, int maximum)
+uint8_t ServoInvertible::attach(int pin, int minimum, int maximum)
 {
 	if (servoIndex < MAX_SERVOS) {
 		pinMode(pin, OUTPUT);
@@ -748,7 +748,7 @@ uint8_t Servo::attach(int pin, int minimum, int maximum)
 	return servoIndex;
 }
 
-void Servo::detach()
+void ServoInvertible::detach()
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	servo_active_mask &= ~(1<<servoIndex);
@@ -758,7 +758,7 @@ void Servo::detach()
 	}
 }
 
-void Servo::write(int value)
+void ServoInvertible::write(int value)
 {
 	if (servoIndex >= MAX_SERVOS) return;
 	if (value >= MIN_PULSE_WIDTH) {
@@ -773,7 +773,7 @@ void Servo::write(int value)
 	servo_ticks[servoIndex] = map(value, 0, 180, min_ticks, max_ticks);
 }
 
-// int Servo::writeMicroseconds(uint32_t value, int invert)
+// int ServoInvertible::writeMicroseconds(uint32_t value, int invert)
 // {
 // 	// invert the signal if needed
 // 	if (invert)
@@ -806,7 +806,7 @@ void Servo::write(int value)
 // 	return ticksToUs(value);
 // }
 
-void Servo::writeMicroseconds(int value, int invert)
+void ServoInvertible::writeMicroseconds(int value, int invert)
 {
 	// update signal inversion state
 	inverted = invert;
@@ -824,19 +824,19 @@ void Servo::writeMicroseconds(int value, int invert)
 	servo_ticks[servoIndex] = value;
 }
 
-int Servo::read() // return the value as degrees
+int ServoInvertible::read() // return the value as degrees
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return map(servo_ticks[servoIndex], min_ticks, max_ticks, 0, 180);
 }
 
-int Servo::readMicroseconds()
+int ServoInvertible::readMicroseconds()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return ticksToUs(servo_ticks[servoIndex]);
 }
 
-bool Servo::attached()
+bool ServoInvertible::attached()
 {
 	if (servoIndex >= MAX_SERVOS) return 0;
 	return servo_active_mask & (1<<servoIndex);

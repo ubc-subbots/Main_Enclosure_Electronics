@@ -1,3 +1,5 @@
+#include <font5x7.h>
+
 #include <micro_ros_arduino.h>
 
 #include <stdio.h>
@@ -8,7 +10,7 @@
 
 #include <std_msgs/msg/u_int32.h>
 
-#include <Servo.h>
+#include <ServoInvertible.h>
 
 // calls the function fn and runs the error loop if an error is detected
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
