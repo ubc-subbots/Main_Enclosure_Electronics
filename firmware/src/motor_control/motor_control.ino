@@ -10,7 +10,7 @@
 
 #include <std_msgs/msg/u_int32.h>
 
-#include <ServoInvertible.h>
+#include <ServoInvertible.h> 
 
 // calls the function fn and runs the error loop if an error is detected
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
@@ -63,12 +63,12 @@
 /*   Servo Objects     */
 /***********************/
 
-Servo TLF; //Thruster on left angled at front
-Servo TLT; //Thruster on left pointing upwards
-Servo TLB; //Thruster on left angled at back
-Servo TRF; //Thruster on right angled at front
-Servo TRT; //Thruster on right pointing upwards
-Servo TRB; //Thruster on right angled at back
+ServoInvertible TLF; //Thruster on left angled at front
+ServoInvertible TLT; //Thruster on left pointing upwards
+ServoInvertible TLB; //Thruster on left angled at back
+ServoInvertible TRF; //Thruster on right angled at front
+ServoInvertible TRT; //Thruster on right pointing upwards
+ServoInvertible TRB; //Thruster on right angled at back 
 
 /***********************/
 /*        E-Stop       */
