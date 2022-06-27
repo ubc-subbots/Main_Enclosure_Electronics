@@ -1,14 +1,14 @@
 #include <font5x7.h>
 
-#include <micro_ros_arduino.h>
+//#include <micro_ros_arduino.h>
 
 #include <stdio.h>
-#include <rcl/rcl.h>
-#include <rcl/error_handling.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
+//#include <rcl/rcl.h>
+//#include <rcl/error_handling.h>
+//#include <rclc/rclc.h>
+//#include <rclc/executor.h>
 
-#include <std_msgs/msg/u_int32.h>
+//#include <std_msgs/msg/u_int32.h>
 
 #include <ServoInvertible.h> 
 
@@ -86,15 +86,15 @@ bool e_stop_triggered = false;
 /***********************/
 /*         ROS         */
 /***********************/
-rcl_subscription_t subscriber;
-rcl_publisher_t debug_publisher;
-std_msgs__msg__UInt32 msg;
-std_msgs__msg__UInt32 out_msg;
-rclc_executor_t executor;
-rclc_support_t support;
-rcl_allocator_t allocator;
-rcl_node_t node;
-rcl_timer_t timer;
+//rcl_subscription_t subscriber;
+//rcl_publisher_t debug_publisher;
+//std_msgs__msg__UInt32 msg;
+//std_msgs__msg__UInt32 out_msg;
+//rclc_executor_t executor;
+//rclc_support_t support;
+//rcl_allocator_t allocator;
+//rcl_node_t node;
+//rcl_timer_t timer;
 
 // Structure to store thruster PWM data
 struct thruster_data {
@@ -105,6 +105,9 @@ struct thruster_data {
   uint32_t trt;
   uint32_t trb;
 };
+
+uint32_t read_buffer;
+
 struct thruster_data pwm_data;
 
 /* 
@@ -153,11 +156,10 @@ void error_loop(){
  * move in either yaw or linear x. The angled motors 
  * allow it to exclusively move in either linear y or z.
  */
-void motorControlCallback (const void * msgin){
-  const std_msgs__msg__UInt32 * msg = (const std_msgs__msg__UInt32 *)msgin;
-
+void motorControlCallback (uint32_t msg_data){
+  
   // convert from bit representation to PWM pulse width in microseconds
-  decode_thruster_data(msg->data);
+  decode_thruster_data(msg_data);
 
   //   send data to thursters
   TLF.writeMicroseconds(pwm_data.tlf, 1);
@@ -168,11 +170,10 @@ void motorControlCallback (const void * msgin){
   TRB.writeMicroseconds(pwm_data.trb, 1);
 
   // set published message to be the PWM signal sent to TLF
-  out_msg.data = pwm_data.tlf;
-//   out_msg.data = msg->data;
+  //out_msg.data = pwm_data.tlf;
 
   // publish data via debug_publisher
-  RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
+  //RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
 }
 
 /***********************/
@@ -181,7 +182,7 @@ void motorControlCallback (const void * msgin){
 
 void setup()  {
   
-  set_microros_transports();
+  //set_microros_transports();
 
   /*
    * this will initialize PWM signal control on the specified pins. Default 
@@ -196,6 +197,7 @@ void setup()  {
 
   delay(2000);
   
+  /*
   allocator = rcl_get_default_allocator();
 
   //create init_options
@@ -221,7 +223,8 @@ void setup()  {
   // create executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &motorControlCallback, ON_NEW_DATA));
-
+  */
+  
   //   init sequence
   TLF.writeMicroseconds(1500, 1);
   TLT.writeMicroseconds(1500, 1);
@@ -230,12 +233,12 @@ void setup()  {
   TRT.writeMicroseconds(1500, 1);
   TRB.writeMicroseconds(1500, 1);
 
-  out_msg.data = TLF.readMicroseconds();
+  //out_msg.data = TLF.readMicroseconds();
 //   out_msg.data = msg->data;
 
   delay(7000);
   // publish data via debug_publisher
-  RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
+  //RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
 }
 
 void loop()  {
@@ -252,5 +255,10 @@ void loop()  {
   }
 
   delay(100);
-  RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
+
+  while (Serial.available()>=4){
+    Serial.readBytes((char *)&read_buffer, 4);
+  }
+  motorControlCallback(read_buffer);
+
 }
