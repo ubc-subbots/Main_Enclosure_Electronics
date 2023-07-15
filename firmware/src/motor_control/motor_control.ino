@@ -50,7 +50,22 @@
 #define TRB_MASK 0x1f << TRB_SHIFT_VAL
 
 #define ISOLATE_BITS(data, thruster) (data & thruster##_MASK) >> thruster##_SHIFT_VAL
-#define CONVERT_MICROSECONDS(bit_val) 1356 + bit_val*9
+// #define CONVERT_MICROSECONDS(bit_val) 1356 + bit_val*9
+#define STATIONARY_US 1500
+#define STATIONARY_LEVEL 16
+#define F_MIN_LEVEL STATIONARY_LEVEL + 1
+#define B_MIN_LEVEL STATIONARY_LEVEL - 1
+// Assume voltage draw 10V, max current 4A
+#define F_MAX_US 1736 // Max Forward thrust: 1.31 kgf
+#define B_MAX_US 1264 // Max Backward thrust: 1.06 kgf
+#define F_MIN_US 1544 // Min Forward thrust: 0.04 kgf
+#define B_MIN_US 1456 // Min Backward thrust: 0.03 kgf
+#define F_FACTOR 12 // (F_MAX - F_MIN) / 14 = 13.71... ~= 12 (a multiple of 4) so F_MAX is actually F_MIN + F_FACTOR * 14 = 1712
+#define B_FACTOR 12 // (B_MIN - B_MAX) / 15 = 12.8... ~= 12 (a multiple of 4) so B_MAX is actually B_MIN - B_FACTOR * 15 = 1276
+
+#define CONVERT_MICROSECONDS(bit_val) (bit_val == STATIONARY_LEVEL ? STATIONARY_US : \
+ (bit_val > STATIONARY_LEVEL ? (F_MIN_US + F_FACTOR * (bit_val - F_MIN_LEVEL)) : \
+ (B_MIN_US - B_FACTOR * (B_MIN_LEVEL - bit_val))))
 
 /***********************/
 /*    Calib Consts     */
