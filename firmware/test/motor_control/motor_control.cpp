@@ -1,4 +1,4 @@
-#include <font5x7.h>
+// #include <font5x7.h>
 
 //#include <micro_ros_arduino.h>
 
@@ -10,7 +10,7 @@
 
 //#include <std_msgs/msg/u_int32.h>
 
-#include <ServoInvertible.h> 
+// #include <ServoInvertible.h> 
 
 // calls the function fn and runs the error loop if an error is detected
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
@@ -48,8 +48,15 @@
 #define TRF_MASK 0x1f << TRF_SHIFT_VAL
 #define TRT_MASK 0x1f << TRT_SHIFT_VAL
 #define TRB_MASK 0x1f << TRB_SHIFT_VAL
+// #define THRUSTER_MASK 0x1f
 
 #define ISOLATE_BITS(data, thruster) (data & thruster##_MASK) >> thruster##_SHIFT_VAL
+// #define ISOLATE_BITS(data, thruster) (data >> thruster##_SHIFT_VAL) & THRUSTER_MASK
+// uint32_t ISOLATE_BITS(uint32_t data, int thruster) 
+// {
+//   printf("truster shift val %d\n", thruster);
+//   return (data >> thruster) & THRUSTER_MASK;
+// }
 // #define CONVERT_MICROSECONDS(bit_val) 1356 + bit_val*9
 #define STATIONARY_US 1500
 #define STATIONARY_LEVEL 16
@@ -63,8 +70,11 @@
 #define F_FACTOR 12 // (F_MAX - F_MIN) / 14 = 13.71... ~= 12 (a multiple of 4) so F_MAX is actually F_MIN + F_FACTOR * 14 = 1712
 #define B_FACTOR 12 // (B_MIN - B_MAX) / 15 = 12.8... ~= 12 (a multiple of 4) so B_MAX is actually B_MIN - B_FACTOR * 15 = 1276
 
-#define CONVERT_MICROSECONDS(bit_val) (bit_val == STATIONARY_LEVEL ? STATIONARY_US : \
- (bit_val > STATIONARY_LEVEL ? (F_MIN_US + F_FACTOR * (bit_val - F_MIN_LEVEL)) : \
+#define CONVERT_MICROSECONDS(bit_val) \
+(bit_val == STATIONARY_LEVEL ? \
+ STATIONARY_US : \
+ (bit_val > STATIONARY_LEVEL ? \
+ (F_MIN_US + F_FACTOR * (bit_val - F_MIN_LEVEL)) : \
  (B_MIN_US - B_FACTOR * (B_MIN_LEVEL - bit_val))))
 
 /***********************/
@@ -256,7 +266,7 @@ void setup()  {
   //RCSOFTCHECK(rcl_publish(&debug_publisher, &out_msg, NULL));
 }
 
-void loop()  {
+void loop(SerialClass Serial)  {
   // Don't do anything if e-stop triggered
   if (!e_stop_triggered) {
     // Check if e-stop triggered
