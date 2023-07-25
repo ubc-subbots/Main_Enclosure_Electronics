@@ -121,7 +121,8 @@ struct thruster_data {
   uint32_t trb;
 };
 
-uint32_t read_buffer;
+uint32_t read_buffer = 554189328; // 0
+uint32_t old_read_buffer = 0;
 
 struct thruster_data pwm_data;
 
@@ -177,12 +178,12 @@ void motorControlCallback (uint32_t msg_data){
   decode_thruster_data(msg_data);
 
   //   send data to thursters
-  TLF.writeMicroseconds(pwm_data.tlf, 1);
-  TLT.writeMicroseconds(pwm_data.tlt, 1);
-  TLB.writeMicroseconds(pwm_data.tlb, 1);
-  TRF.writeMicroseconds(pwm_data.trf, 1);
-  TRT.writeMicroseconds(pwm_data.trt, 1);
-  TRB.writeMicroseconds(pwm_data.trb, 1);
+  TLF.writeMicroseconds(pwm_data.tlf, 0);
+  TLT.writeMicroseconds(pwm_data.tlt, 0);
+  TLB.writeMicroseconds(pwm_data.tlb, 0);
+  TRF.writeMicroseconds(pwm_data.trf, 0);
+  TRT.writeMicroseconds(pwm_data.trt, 0);
+  TRB.writeMicroseconds(pwm_data.trb, 0);
 
   // set published message to be the PWM signal sent to TLF
   //out_msg.data = pwm_data.tlf;
@@ -241,12 +242,12 @@ void setup()  {
   */
   
   //   init sequence
-  TLF.writeMicroseconds(1500, 1);
-  TLT.writeMicroseconds(1500, 1);
-  TLB.writeMicroseconds(1500, 1);
-  TRF.writeMicroseconds(1500, 1);
-  TRT.writeMicroseconds(1500, 1);
-  TRB.writeMicroseconds(1500, 1);
+  TLF.writeMicroseconds(1500, 0);
+  TLT.writeMicroseconds(1500, 0);
+  TLB.writeMicroseconds(1500, 0);
+  TRF.writeMicroseconds(1500, 0);
+  TRT.writeMicroseconds(1500, 0);
+  TRB.writeMicroseconds(1500, 0);
 
   //out_msg.data = TLF.readMicroseconds();
 //   out_msg.data = msg->data;
@@ -274,6 +275,10 @@ void loop()  {
   while (Serial.available()>=4){
     Serial.readBytes((char *)&read_buffer, 4);
   }
-  motorControlCallback(read_buffer);
+  if (read_buffer != old_read_buffer)
+  {
+    motorControlCallback(read_buffer);
+    old_read_buffer = read_buffer;
+  }
 
 }
